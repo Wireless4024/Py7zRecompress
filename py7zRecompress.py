@@ -1,6 +1,7 @@
-#!/usr/bin/python
+#!/usr/bin/python3
 # coding=utf-8
 import _thread
+import argparse
 import os
 import platform
 import subprocess
@@ -8,12 +9,12 @@ import sys
 import threading
 import time
 
-_7zCompressable = ('.7z', '.xz', '.zip', '.tar', '.rar', '.jar')
-_7zCompressArgs = '"{_7z}" a -sdel -mx9 -ssw -mmt3 -myx9 -md{dictsz} -aoa -mfb273 ' \
+_7zCompressable = ('.7z', '.xz', '.zip', '.tar', '.jar')
+_7zCompressArgs = '"{_7z}" a -sdel -mx9 -ssw -mmt{thread} -myx9 -md{dictsz} -aoa -mfb273 ' \
 				  '-ms=on "{dest}" "{src}"'
-_xzCompressArgs = '"{_7z}" a -sdel -txz -mx9 -ssw -mmt3 -myx9 -md{dictsz} -aoa -mfb273 ' \
+_xzCompressArgs = '"{_7z}" a -sdel -txz -mx9 -ssw -mmt{thread} -myx9 -md{dictsz} -aoa -mfb273 ' \
 				  '-ms=on "{dest}" "{src}"'
-_zipCompressArgs = '"{_7z}" a -sdel -tzip -mx9 -mfb258 -mmt3 -ssw -aoa "{dest}" "{src}"'
+_zipCompressArgs = '"{_7z}" a -sdel -tzip -mx9 -mfb258 -mmt{thread} -ssw -aoa "{dest}" "{src}"'
 _7zExtractArgs = '"{_7z}" x "{src}" "-o{dest}" -y -r'
 
 _default7z = "C:\\Program Files\\7-Zip\\7z.exe" if platform.system() == 'Windows' and os.path.exists(
@@ -23,35 +24,44 @@ _defaultDictSize = '96m'
 gb = {}
 
 
+def terminal_width():
+	try:
+		term_width, void = os.get_terminal_size()
+	except Exception:
+		term_width = 80
+	return min(max(20, term_width), 120) - 3
+
+
 def compress(_7z = _default7z, source = '', dest = os.getcwd(), dictionary_size = _defaultDictSize, method = '7z'):
 	if source == '':
 		return False
 	if method == 'xz':
 		command = _xzCompressArgs.format(_7z = _7z, src = os.path.join(source, '*'), dest = dest,
-										 dictsz = dictionary_size)
-		execComm(command)
+										 dictsz = dictionary_size, thread = gb['ct'])
+		execommand(command)
 	elif method == 'zip' or method == 'jar':
 		command = _zipCompressArgs.format(_7z = _7z, src = os.path.join(source, '*'), dest = dest,
-										  dictsz = dictionary_size)
-		execComm(command)
+										  dictsz = dictionary_size, thread = gb['ct'])
+		execommand(command)
 	else:
 		command = _7zCompressArgs.format(_7z = _7z, src = os.path.join(source, '*'), dest = dest,
-										 dictsz = dictionary_size)
-		execComm(command)
+										 dictsz = dictionary_size, thread = gb['ct'])
+		execommand(command)
 
 
 def extract(_7z = _default7z, source = '', dest = os.path.join(os.getcwd(), 'tmp')):
 	if source == '':
 		return False
 	command = _7zExtractArgs.format(_7z = _7z, src = source, dest = dest)
-	execComm(command)
+	execommand(command)
 
 
-def execComm(command = ''):
+# noinspection SpellCheckingInspection
+def execommand(command = ''):
 	subprocess.Popen(command, shell = True, stdout = subprocess.DEVNULL).wait()
 
 
-def getType(val = '', sensitive = False):
+def get_extension(val = '', sensitive = False):
 	if val.endswith('.jar'):
 		return 'jar'
 	if not sensitive:
@@ -64,28 +74,28 @@ def getType(val = '', sensitive = False):
 
 
 class File:
-	def __init__(self, path, deep, sensitive = False):
+	def __init__(self, path, sensitive = False):
 		self.name = os.path.basename(path)
-		self.deep = deep
-		self.type = getType(path, sensitive)
-		self.out = os.path.join(os.path.dirname(path), (self.name.split('.', 1)[0] + '.' + self.type))
+		self.type = get_extension(path, sensitive)
+		# noinspection PyTypeChecker
+		self.out = os.path.join(os.path.dirname(path),
+								(self.name.rsplit('.', 1)[0] + '.' + self.type) if not sensitive else self.name)
 		self.path = path
 		self.status = 'idle'
 
-	def info(self):
-		return "name:[{}]|path:[{}]".format(self.name, self.path)
-
 	def backup(self):
-		old = os.path.join(os.getcwd(), 'old', str(int(time.time())) + self.name)
+		old = os.path.join(os.getcwd(), 'old', str(int(time.time())) + '-' + self.name)
 		os.rename(self.path, old)
 		return old
 
-	def deepCompress(self, folder):
-		execComm('"{}" "{}" "{}" "{}" "{}" "{}" "{}" "{}"'.format(sys.executable, sys.argv[0], folder, gb['thread'],
-																  gb['deep'], 'yes', gb['dict'], gb['7z'], True))
+	@staticmethod
+	def deep_compress(folder):
+		execommand('"{}" "{}" "{}" -wt "{}" -ct "{}" -d "{}" -s "{}" -dc "{}" -7z "{}" -_deep "{}"'.format(
+			sys.executable, sys.argv[0], folder, gb['wt'], gb['ct'], gb['deep'] - 1, 'yes', gb['dict'], gb['7z'], True))
 
+	# noinspection SpellCheckingInspection
 	def recompress(self):
-		print("\rWorking on [{}] path : '{}'".format(self.name, self.path))
+		print("\rWorking on [{}]".format(self))
 		temp = os.path.join(os.getcwd(), 'tmp', str(time.time()) + '-' + self.name.replace('.', '-'))
 		self.status = 'creating temp'
 		if not os.path.exists(temp):
@@ -94,16 +104,16 @@ class File:
 		backup = self.backup()
 		self.status = 'extracting'
 		extract(source = backup, dest = temp)
-		if self.deep > 1 and deeper(temp):
+		if gb['deep'] > 1 and deeper(temp):
 			self.status = 'waiting deep compress'
-			self.deepCompress(temp)
+			self.deep_compress(temp)
 		self.status = 'compressing'
 		compress(source = temp, dest = self.out, method = self.type)
 		self.status = 'removing temp'
 		os.rmdir(temp)
 		self.status = 'done'
 		Manager.working.remove(self)
-		print("\r[ done ] {}".format(self.path))
+		print("\r[ done ] {}".format(self, -9))
 
 	def __str__(self):
 		return self.path
@@ -113,11 +123,19 @@ class Manager:
 	files = []
 	working = []
 
-	def __init__(self, location = os.getcwd(), deep = 1, sensitive = False):
-		print("scanning directory '{}'".format(location))
-		Manager.files = [File(os.path.join(root, f), deep, sensitive) for root, dirs, files in os.walk(location) for f
-						 in files if f.endswith(_7zCompressable)]
+	def __init__(self, locations, sensitive = False, threads = 1):
+		self.run(threads)
+		length = 0
+		fileTypes = _7zCompressable if sensitive else (*_7zCompressable, '.rar', '.gz')
+		for location in locations:
+			print("scanning directory '{}'".format(location))
+			temp = [File(os.path.join(root, f), sensitive)
+					for root, dirs, files in os.walk(location) for f
+					in files if f.endswith(fileTypes)]
+			length += len(temp)
+			Manager.files.extend(temp)
 		print("Found {} files!".format(len(Manager.files)))
+		gb['finished'] = True
 
 	@staticmethod
 	def run(threads = 1):
@@ -133,17 +151,32 @@ class Manager:
 
 class Work(threading.Thread):
 	def run(self):
+		while len(Manager.files) < 1 and not gb['finished']:
+			time.sleep(1)
 		while 1:
 			if len(Manager.files) < 1:
 				break
 			Manager.pop().recompress()
 
 
-def printStatus():
+def print_status():
+	while len(Manager.files) < 1 and not gb['finished']:
+		time.sleep(1)
 	while len(Manager.working) > 0:
 		for work in Manager.working:
-			print("\r[ {} ] {}".format(work.status, work), end = '')
-			time.sleep(2)
+			print("\r[ {} ] {}".format(work.status, wrap(work, -len(work.status))), end = '')
+			time.sleep(1)
+		print("running [{}] task | remaining [{}] files".format(len(Manager.working), len(Manager.files)), end = '')
+		time.sleep(2)
+
+
+def wrap(msg, length = 0):
+	if length < 0:
+		length += terminal_width()
+	if length == 0:
+		length = terminal_width()
+	msg = str(msg)
+	return ('..' + msg[len(msg) - length:].strip(' \r\n\t')) if len(msg) > length else msg
 
 
 def deeper(path = ''):
@@ -154,7 +187,8 @@ def deeper(path = ''):
 	return False
 
 
-def argsStr(arr):
+# noinspection SpellCheckingInspection
+def argstr(arr):
 	base = ' '
 	for i in arr:
 		base += '"{}" '.format(i)
@@ -162,59 +196,47 @@ def argsStr(arr):
 
 
 if __name__ == '__main__':
-	# File('H:\\Files\\Software\\Downloads\\ChkFlsh.zip').backup()
-	if len(sys.argv) < 2:
-		print('''py7zrecompress.py <folder> [threads (1)] [deep=1] [extension sensitive=(no|yes)] [dictionary_size (96m)] [7z path (7z)] [deepcall]
-folder 	: folder that contain [ .7z , .xz , .zip , .tar , .rar ]
-threads : number of working thread (higher number required more memory) 
-deep    : scan deep  useful when you have zip inside zip
-		 (required more memory when threads > 1)
-         1 just it self
-         2 will call this program again in extract folder
-         3 will call this program again in extract folder 2 times
-        -1 will call this program again and again until it doesn't have compressable file at most at 2147483647 times!
-extension sensitive : yes - output will same as extension
-                      no  - will compress into .7z
-dictionary_size : size of dictionary
-    memory required (per thread)
-deep call = reclusive call when deep > 1 (internal use)
-[dictionary size] [memory usage]
-      96m           1   GByte
-      128m          1.4 GBytes
-      192m          2   GBytes 
-      256m          2.7 GBytes
-      384m          4   GBytes
-      512m          5.4 GBytes
-      768m          8.3 GBytes
-      1024m         10.7 GBytes
-      1536m         16.7 GBytes
-**Note
-<> mean required
-[] mean optional
-if file is locked will produce empty .7z file and old file are in old folder''')
-		exit(-1)
-	# exit(-1)
-	if not os.path.exists(sys.argv[1]):
-		print("'{}' doesn't exist".format(sys.argv[1]))
-		exit(-1)
-	if not os.path.isdir(sys.argv[1]):
-		print("'{}' is not a directory".format(sys.argv[1]))
-		exit(-1)
+	args = argparse.ArgumentParser(description = 'Py7zReCompress help')
+	args.add_argument(dest = 'directory', help = 'directory that contains archive files')
+	args.add_argument('-wt', '--work_thread', default = 1, dest = 'work_thread', type = int,
+					  help = 'number of working thread(s)')
+	args.add_argument('-ct', '--compress_thread', default = 3, dest = 'compress_thread', type = int,
+					  help = 'number of thread used by 7zip')
+	args.add_argument('-d', '--deep', default = 2, dest = 'deep_count', type = int,
+					  help = 'number to dig into archive file')
+	args.add_argument('-s', '--sensitive', default = 'no', dest = 's', type = str,
+					  help = 'use compress algorithm same with file extension', choices = ('yes', 'y', 'no', 'n'))
+	args.add_argument('-dc', '--dictionary', default = 96, dest = 'dictionary_size', type = int,
+					  help = 'dictionary size (megabytes)')
+	args.add_argument('-7z', '--executable', default = _default7z, dest = '_7z_path', type = str,
+					  help = '7zip executable path')
+	args.add_argument('-_deep', default = False, dest = '_deep', type = bool,
+					  help = 'deep call from itself (internal use)')
+	arg = args.parse_args()
 
-	gb['path'] = path = sys.argv[1]
-	gb['thread'] = thread = int(sys.argv[2]) if len(sys.argv) > 2 and sys.argv[2].isdigit() else 1
-	deep = int(sys.argv[3]) if len(sys.argv) > 3 else 2
-	gb['deep'] = deep = 2147483647 if deep < 0 else deep
-	gb['sensitive'] = sensitive = True if len(sys.argv) > 4 and sys.argv[4].lower() == 'yes' else False
-	gb['dict'] = _defaultDictSize
-	if len(sys.argv) > 5:
-		gb['dict'] = _defaultDictSize = sys.argv[5]
-	gb['7z'] = _7z = sys.argv[6] if len(sys.argv) > 6 else _default7z
-	gb['deepcall'] = True if len(sys.argv) > 7 and sys.argv[7].lower() == 'True' else False
+	gb['path'] = arg.directory if not isinstance(arg.directory, str) else [arg.directory]
+	for d in gb['path']:
+		if not os.path.exists(d):
+			print("'{}' doesn't exist".format(d))
+			exit(-1)
+		if not os.path.isdir(d):
+			print("'{}' is not a directory".format(d))
+			exit(-1)
 
+	gb['wt'] = arg.work_thread
+	gb['ct'] = arg.compress_thread
+	gb['deep'] = 2147483647 if arg.deep_count < 0 else arg.deep_count
+	gb['sensitive'] = arg.s.startswith('y')
+	gb['dict'] = "{}m".format(arg.dictionary_size)
+	# noinspection PyProtectedMember
+	gb['7z'] = arg._7z_path
+	# noinspection PyProtectedMember
+	gb['deepcall'] = arg._deep
+	gb['finished'] = False
 	if not os.path.exists('tmp'):
 		os.mkdir('tmp')
 	if not os.path.exists('old'):
 		os.mkdir('old')
-	Manager(path, deep, sensitive).run(thread)
-	_thread.start_new_thread(printStatus, ())
+
+	_thread.start_new_thread(print_status, ())
+	Manager(gb['path'], gb['sensitive'], gb['wt'])
