@@ -41,9 +41,11 @@ Required software
 	>
 	>> `-dc 128`  :: set dictionary size to 128m  
 
-	### *Note
+	### *Note*
 	> `Deep` parameter will very very slow if file/folder contains lots of file  
 
 	> you need to manually delete `old` folder. in case if 7zip crashed or program has accidental terminates your file will be here  
 
+	> please manually extract locked file before it will cause deadlock   
+	
 	> _**it will work even it's not efficient**_

@@ -4,6 +4,7 @@ import _thread
 import argparse
 import os
 import platform
+import shutil
 import subprocess
 import sys
 import threading
@@ -32,7 +33,6 @@ def terminal_width():
 
 
 def compress(_7z = _default7z, source = '', dest = os.getcwd(), dictionary_size = 96, method = '7z'):
-	exit(0)
 	if source == '':
 		return False
 	if method == 'xz':
@@ -85,7 +85,10 @@ class File:
 
 	def backup(self):
 		old = os.path.join(os.getcwd(), 'old', str(int(time.time())) + '-' + self.name)
-		os.rename(self.path, old)
+		try:
+			os.rename(self.path, old)
+		except OSError:
+			shutil.move(self.path, old)
 		return old
 
 	@staticmethod
@@ -96,6 +99,7 @@ class File:
 
 	# noinspection SpellCheckingInspection
 	def recompress(self):
+		cll()
 		print("\rWorking on [%s]" % self)
 		temp = os.path.join(os.getcwd(), 'tmp', str(int(time.time())) + '-' + self.name.replace('.', '-'))
 		self.status = 'creating temp'
@@ -114,6 +118,7 @@ class File:
 		os.rmdir(temp)
 		self.status = 'done'
 		Manager.working.remove(self)
+		cll()
 		print("\r[done] %s" % self)
 
 	def __str__(self):
@@ -127,12 +132,8 @@ class Manager:
 
 	def __init__(self, locations, sensitive = False, threads = 1):
 		self.run(threads)
-		print(_7zCompressable)
 		file_types = _7zCompressable if sensitive else [*_7zCompressable, '.rar', '.gz']
-		print(file_types)
 		file_types = [x for x in (*file_types, *gb['include']) if not x.endswith((*gb['exclude'],))]
-		print(gb)
-		print(file_types)
 		for location in locations:
 			print("scanning directory '%s'" % location)
 			temp = [File(os.path.join(root, f), sensitive)
@@ -165,18 +166,25 @@ class Work(threading.Thread):
 			Manager.pop().recompress()
 
 
+# clear line
+def cll():
+	print('\r', ' ' * (terminal_width() + 3), end = '', sep = '')
+
+
 def print_status():
 	while len(Manager.files) < 1 and not gb['finished']:
 		time.sleep(1)
 	while len(Manager.working) > 0 or len(Manager.files) > 0:
 		for work in Manager.working:
+			cll()
 			print("\r[%s] %s" % (work.status, wrap(work, -(len(work.status) + 3))), end = '')
 			time.sleep(2)
-
+		cll()
 		print("\rRunning [%s] task | Remaining [%s] files" % (len(Manager.working), len(Manager.files)), end = '')
 		time.sleep(2)
 		print(gen_prog(terminal_width()), end = '')
 		time.sleep(2)
+	cll()
 	print('\rDone!? | %s file has been re-compressed' % Manager.total)
 
 
