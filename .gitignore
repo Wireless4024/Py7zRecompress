@@ -1,2 +1,4 @@
 # ignore generated folder from PyCharm
 .idea/*
+old/*
+tmp/*
