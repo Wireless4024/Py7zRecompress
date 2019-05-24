@@ -113,9 +113,8 @@ class File:
 
 	@staticmethod
 	def deep_compress(folder):
-		return execommand('"%s" "%s" "%s" -wt %s -ct %s -d %s -s %s -dc %s -7z "%s" -n yes -_deep %s' % (
-			sys.executable, sys.argv[0], folder, gb['wt'], gb['ct'], gb['deep'] - 1, 'yes', gb['dict'], gb['7z'],
-			True))
+		return execommand('"%s" "%s" "%s" -wt %s -ct %s -d %s -s %s -dc %s -7z "%s" -n yes' % (
+			sys.executable, sys.argv[0], folder, gb['wt'], gb['ct'], gb['deep'] - 1, 'yes', gb['dict'], gb['7z']))
 
 	def undo(self):
 		try:
@@ -132,11 +131,11 @@ class File:
 			cll()
 			print("\rWorking on [%s]" % self)
 			temp = os.path.join(os.getcwd(), 'tmp', str(int(time.time())) + '-' + self.name.replace('.', '-'))
+			self.status = 'backing up'
+			backup = self.backup()
 			self.status = 'creating temp'
 			if not os.path.exists(temp):
 				os.mkdir(temp)
-			self.status = 'backing up'
-			backup = self.backup()
 			self.status = 'extracting'
 			if not extract(source = backup, dest = temp):
 				cll()
@@ -168,7 +167,7 @@ class File:
 			cll()
 			print("\r[done] %s" % self)
 		except Exception as e:
-			sys.stderr.write("\r[Error] %s | [Cause] %s\n" % (self, e.args[0]))
+			sys.stderr.write("\r[Error] %s | [Cause] %s\n" % (self, e))
 			self.undo()
 			sys.stderr.write("\r[Info] %s undo successfully!\n" % self)
 
@@ -205,15 +204,25 @@ class Manager:
 				file_types = (x for x in (*file_types, *gb['include']) if not x.endswith((*gb['exclude'],)))
 		else:
 			file_types = (*gb['only'],)
-		for location in locations:
+		_thread.start_new_thread(Manager.walktop, (locations, lambda x: x.endswith((*file_types,))))
+
+	@staticmethod
+	def walktop(path, only):
+		for location in path:
 			print("Scanning directory '%s'" % location)
-			temp = [File(os.path.join(root, f), sensitive)
-					for root, dirs, files in os.walk(location) for f
-					in files if f.endswith((*file_types,))]
-			Manager.total += len(temp)
-			Manager.files.extend(temp)
+			Manager.walk(location, only)
 		print("Found %s files!" % Manager.total)
 		gb['finished'] = True
+
+	@staticmethod
+	def walk(path, only):
+		for f in os.listdir(path):
+			f = os.path.join(path, f)
+			if os.path.isdir(f):
+				Manager.walk(f, only)
+			elif os.path.isfile(f) and only(f):
+				Manager.files.append(File(f, gb['sensitive']))
+				Manager.total += 1
 
 	@staticmethod
 	def run(threads = 1):
@@ -266,9 +275,14 @@ def cll():
 
 
 def saveInfo(path, old):
+	if not os.path.exists('info.txt'):
+		f = open('info.txt', 'w')
+		f.write('RE-COMPRESSED FILES\n')
+		f.close()
 	file = open('info.txt', 'a+')
-	file.write('[OLD] %s -> [ORIGINAL] %s' % (old, path))
-	file.newlines()
+	if not os.path.exists(old):
+		old = '[REMOVED]'
+	file.writelines('[OLD] %s -> [ORIGINAL] %s\n' % (old, path))
 	file.close()
 
 
@@ -341,7 +355,7 @@ if __name__ == '__main__':
 	args.add_argument('-o', '--only', default = '', dest = 'only', type = str,
 					  help = 're-compress only file extension separator is ; like "-o zip"')
 	args.add_argument('-n', '--no-keep', default = 'no', dest = 'no_keep', type = str,
-					  choices = ('y', 'yes', 'n', 'no'),  help = 'if yes will keep old file')
+					  choices = ('y', 'yes', 'n', 'no'), help = 'if yes will keep old file')
 	args.add_argument('-t', '--timeout', default = 900, dest = 'timeout', type = int,
 					  help = 'timeout in second if extract time is longer than the specified time program will abort this file')
 	args.add_argument('-p', '--password', default = '', dest = 'password', type = str,
@@ -352,8 +366,6 @@ if __name__ == '__main__':
 					  help = 'additional argument when extract for 7zip')
 	args.add_argument('-skip', '--skip-locked', default = '', dest = 'skip', type = str,
 					  choices = ('y', 'yes', 'n', 'no'), help = 'skip locked file')
-	args.add_argument('-_deep', default = False, dest = '_deep', type = bool,
-					  help = 'deep call from itself (internal use)')
 	arg = args.parse_args()
 
 	gb['path'] = arg.directory if not isinstance(arg.directory, str) else [arg.directory]
@@ -372,8 +384,6 @@ if __name__ == '__main__':
 	gb['dict'] = arg.dictionary_size
 	# noinspection PyProtectedMember
 	gb['7z'] = arg._7z_path
-	# noinspection PyProtectedMember
-	gb['deepcall'] = arg._deep
 	gb['finished'] = False
 	gb['exclude'] = arg.exclude.split(';')
 	gb['include'] = arg.include.split(';')

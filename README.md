@@ -23,7 +23,7 @@ Required software
 	> `-e file_extension;...`   : excluded file extension eg. `-e 7z;rar` will not re-compress `.7z` and `.rar` file  
 	> `-i file_extension;...`   : include file extension eg. `-i iso;wim` will re-compress default file extensions and `.iso` and `.wim` file  
 	> `-o file_extension;...`   : re-compress only file extension eg. `-o zip` will re-compress only `.zip` file  
-	> `-n yes|no`       : do not backup  (default : `no`) 
+	> `-n yes|no`       : do not backup  (default : `no`)  
 	> `-t int`          : extract timeout (default : `900` -> 15mins)  
 	> `-p string`       : file password (use when archive is locked)  
 	> `-ca string`      : additional argument when compress for 7zip  
